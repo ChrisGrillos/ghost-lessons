@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghost Lesson 01 — The Counter: Where the Number Lives</title>
+<style>
+  :root{
+    --ink:#101720; --pane:#18212d; --pane-2:#1e2938; --line:#2a3648;
+    --paper:#e8eef6; --dim:#8b9bb0; --faint:#5a6a80;
+    --ghost:#9fd8d4; --ghost-glow:rgba(159,216,212,.35);
+    --c-new:#5aa2ff; --c-good:#47d18a; --c-warn:#f2b544; --c-why:#b78cf7; --c-broken:#ff6b6b;
+    --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --r:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:16px;line-height:1.55}
+  button{font-family:var(--sans);cursor:pointer}
+  .wrap{max-width:1180px;margin:0 auto;padding:14px 16px 60px}
+
+  /* progress rail */
+  .rail{display:flex;gap:4px;margin:6px 0 16px}
+  .seg{flex:1;height:22px;border-radius:5px;background:var(--pane);position:relative;overflow:hidden;transition:background .4s}
+  .seg span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9.5px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase;white-space:nowrap}
+  .seg.done{background:#233246}.seg.done span{color:var(--dim)}
+  .seg.now{background:linear-gradient(90deg,#233246,#2a4a47)}
+  .seg.now span{color:var(--ghost)}
+  @media(max-width:860px){.seg span{display:none}.seg{height:8px}}
+
+  .layout{display:grid;grid-template-columns:minmax(0,58fr) minmax(0,42fr);gap:16px;align-items:start}
+  @media(max-width:860px){.layout{grid-template-columns:1fr}}
+
+  /* code panes + preview */
+  .pane{background:var(--pane);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px;overflow:hidden}
+  .pane-head{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .pane-head .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+  .pane.active .dot{background:var(--ghost);box-shadow:0 0 8px var(--ghost-glow)}
+  .code{font-family:var(--mono);font-size:14px;line-height:1.7;padding:12px 14px;min-height:52px;white-space:pre-wrap;word-break:break-word}
+  .code .ln{display:block;border-left:3px solid transparent;padding-left:10px;margin-left:-10px}
+  .ln.f-new{border-left-color:var(--c-new)}
+  .ln.f-warn{border-left-color:var(--c-warn)}
+  .ln.f-good{border-left-color:var(--c-good);animation:landed .8s ease}
+  .ln.f-lock{opacity:.45}
+  @keyframes landed{from{background:rgba(71,209,138,.14)}to{background:transparent}}
+  .tok-k{color:#79b8ff}.tok-s{color:#e8c07a}.tok-n{color:#f2a3c0}.tok-c{color:var(--faint);font-style:italic}.tok-f{color:#9fd8d4}
+  textarea.code{width:100%;background:var(--pane);color:var(--paper);border:0;outline:none;resize:vertical;min-height:220px}
+  textarea.code:focus{background:var(--pane-2)}
+
+  /* preview mini-browser */
+  .preview-frame{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:14px;background:#f6f8fb}
+  .preview-bar{background:#dde4ec;padding:6px 12px;display:flex;gap:6px;align-items:center}
+  .preview-bar i{width:10px;height:10px;border-radius:50%;background:#b8c2cf;display:inline-block}
+  .preview-bar .addr{margin-left:8px;background:#f6f8fb;border-radius:5px;font-size:11px;color:#5a6a80;padding:2px 10px;font-family:var(--mono)}
+  .preview-body{padding:22px;color:#182231;font-family:var(--sans);min-height:130px;position:relative}
+  .preview-body h1{font-size:20px;margin-bottom:8px;font-family:var(--serif);font-weight:600}
+  .preview-body p{font-size:40px;font-weight:700;font-family:var(--mono);margin:6px 0 14px}
+  .preview-body button{font-size:16px;padding:8px 18px;border-radius:8px;border:1px solid #b8c2cf;background:#fff;margin-right:8px;transition:transform .08s}
+  .preview-body button.press{transform:scale(.93);background:#e2f3ee}
+  .console-strip{font-family:var(--mono);font-size:12.5px;padding:8px 14px;border-top:1px solid var(--line);display:none}
+  .console-strip.on{display:block}
+  .console-strip.err{background:#3a1d22;color:#ffb3b3}
+  .console-strip.brk{background:#3a1d22;color:#ffb3b3;font-weight:700}
+
+  /* right column: ghost voice, cues, interaction */
+  .ghost-card{background:var(--pane);border:1px solid var(--line);border-left:3px solid var(--ghost);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;position:relative}
+  .ghost-card .who{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ghost);margin-bottom:6px}
+  .ghost-card .say{font-family:var(--serif);font-size:17.5px;line-height:1.6;color:var(--paper)}
+  .stage-eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 8px 2px}
+  .stage-eyebrow b{color:var(--dim)}
+
+  .cue{border-radius:8px;padding:10px 12px 10px 14px;margin-bottom:10px;font-size:14px;border:1px solid var(--line);border-left-width:4px;background:var(--pane)}
+  .cue .tag{font-weight:700;font-size:11.5px;letter-spacing:.1em;margin-right:6px}
+  .cue-new{border-left-color:var(--c-new)}.cue-new .tag{color:var(--c-new)}
+  .cue-warn{border-left-color:var(--c-warn)}.cue-warn .tag{color:var(--c-warn)}
+  .cue-good{border-left-color:var(--c-good)}.cue-good .tag{color:var(--c-good)}
+  .cue-why{border-left-color:var(--c-why)}.cue-why .tag{color:var(--c-why)}
+  .cue-broken{border-left-color:var(--c-broken);background:#241318}.cue-broken .tag{color:var(--c-broken)}
+  .cue-lock{border-left-color:var(--faint)}.cue-lock .tag{color:var(--dim)}
+
+  .task{background:var(--pane-2);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:14px}
+  .task h3{font-size:15px;margin-bottom:6px;color:var(--ghost);font-family:var(--serif)}
+  .task p{font-size:14px;color:var(--paper)}
+  .opts{display:grid;gap:8px;margin-top:12px}
+  .opts button{text-align:left;padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--pane);color:var(--paper);font-size:14.5px;transition:border-color .15s}
+  .opts button:hover:not(:disabled){border-color:var(--ghost)}
+  .opts button:disabled{cursor:default;opacity:.55}
+  .opts button.picked-right{border-color:var(--c-good);opacity:1;background:#14281f}
+  .opts button.picked-wrong{border-color:var(--c-broken);opacity:1;background:#241318}
+
+  .btn{display:inline-block;padding:10px 20px;border-radius:8px;border:1px solid var(--ghost);background:transparent;color:var(--ghost);font-size:14.5px;letter-spacing:.02em;margin-top:6px}
+  .btn:hover:not(:disabled){background:rgba(159,216,212,.12)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn-solid{background:var(--ghost);color:#0c1417;font-weight:600}
+  .btn-solid:hover:not(:disabled){background:#b8e6e2}
+  .btn-quiet{border-color:var(--line);color:var(--dim);font-size:13px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  /* ghost cursor */
+  #ghostcur{position:fixed;width:26px;height:26px;pointer-events:none;z-index:50;transition:transform 1.1s cubic-bezier(.4,.1,.2,1),opacity .4s;opacity:0;filter:drop-shadow(0 0 7px var(--ghost-glow))}
+  #ghostcur.show{opacity:1}
+  #ghostcur svg{width:100%;height:100%}
+  @media(prefers-reduced-motion:reduce){
+    #ghostcur{transition:none}
+    .ln.f-good{animation:none}
+  }
+
+  /* screens */
+  .screen{background:var(--pane);border:1px solid var(--line);border-radius:14px;padding:34px 30px;max-width:640px;margin:40px auto}
+  .screen h1{font-family:var(--serif);font-weight:600;font-size:28px;line-height:1.25;margin-bottom:6px}
+  .screen .sub{color:var(--ghost);font-size:13px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:18px}
+  .screen p{color:var(--dim);font-size:15px;margin-bottom:14px}
+  .conf{margin:18px 0}
+  .conf label{display:block;font-size:14px;color:var(--paper);margin-bottom:10px}
+  .conf .scale{display:flex;gap:8px}
+  .conf .scale button{width:44px;height:44px;border-radius:8px;border:1px solid var(--line);background:var(--pane-2);color:var(--paper);font-size:16px}
+  .conf .scale button.on{border-color:var(--ghost);background:rgba(159,216,212,.15);color:var(--ghost)}
+  .summary{font-family:var(--mono);font-size:13.5px;background:var(--pane-2);border:1px solid var(--line);border-radius:8px;padding:14px;margin:14px 0;line-height:1.9}
+  .paper-note{border:1px dashed var(--c-why);border-radius:10px;padding:16px;margin:14px 0;font-size:15px}
+  .hidden{display:none !important}
+  :focus-visible{outline:2px solid var(--ghost);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="ghostcur"><svg viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><path d="M7 2 L7 20 L11.5 16.5 L14.5 23 L17.5 21.5 L14.5 15 L20 14.5 Z" fill="#9fd8d4" stroke="#0c1417" stroke-width="1.2"/></svg></div>
+
+<!-- START SCREEN -->
+<div class="screen" id="start-screen">
+  <div class="sub">Ghost Lesson 01</div>
+  <h1>The Counter: Where the Number Lives</h1>
+  <p>You're going to watch an app get built — then take it over. A ghost does the typing. Your job is to follow, predict its next move, and step in when the code unlocks. About 15 minutes. Best on a computer: you'll edit real code.</p>
+  <p>One honest promise: the ghost will break the app on purpose, exactly where beginners get stuck for weeks. Watch closely there.</p>
+  <div class="conf">
+    <label>Before we start — rate this honestly:<br><em style="color:var(--dim)">"I can read a few lines of JavaScript and tell what they will do."</em></label>
+    <div class="scale" id="conf-scale">
+      <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button>
+    </div>
+    <div style="font-size:12px;color:var(--faint);margin-top:6px">1 = not at all &nbsp;·&nbsp; 5 = comfortably</div>
+  </div>
+  <button class="btn btn-solid" id="begin-btn" disabled>Begin lesson</button>
+</div>
+
+<!-- LESSON -->
+<div class="wrap hidden" id="lesson">
+  <div class="rail" id="rail"></div>
+  <div class="layout">
+    <div class="col-left">
+      <div class="pane" id="html-pane"><div class="pane-head"><span class="dot"></span>index.html</div><div class="code" id="html-code"></div></div>
+      <div class="pane" id="js-pane"><div class="pane-head"><span class="dot"></span>app.js</div><div class="code" id="js-code"></div></div>
+      <div class="preview-frame">
+        <div class="preview-bar"><i></i><i></i><i></i><span class="addr">preview — your app, running live</span></div>
+        <div class="preview-body" id="preview"></div>
+        <div class="console-strip" id="console-strip"></div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div class="stage-eyebrow" id="eyebrow"></div>
+      <div class="ghost-card"><div class="who">👻 the ghost</div><div class="say" id="narr"></div></div>
+      <div id="cues"></div>
+      <div id="interact"></div>
+    </div>
+  </div>
+</div>
+
+<!-- EXIT SCREEN -->
+<div class="screen hidden" id="exit-screen">
+  <div class="sub">Lesson complete</div>
+  <h1>The number lives in two homes.</h1>
+  <p>You watched it get built, predicted the break, fixed the messenger, and wrote a recipe that didn't exist until you typed it.</p>
+  <div class="summary" id="summary"></div>
+  <div class="paper-note">📝 Keep that paper note where you'll see it. In about 48 hours you'll get a short follow-up: one small task, three questions. It's the part that tells us whether this lesson actually worked — please do it even if you feel unsure.</div>
+  <div class="row">
+    <button class="btn" id="copy-results">Copy my session results</button>
+    <span style="font-size:12.5px;color:var(--faint)">Paste these into the follow-up form when it arrives.</span>
+  </div>
+  <p style="margin-top:18px;font-size:13.5px">Lesson 2 opens the locked box: how the button wire actually works.</p>
+</div>
+
+<script>
+"use strict";
+/* ============ utilities ============ */
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ============ experiment wiring (fill in to enable auto-collection) ============ */
+const SUPABASE_URL = "https://lzojydgpbzievbeepxab.supabase.co";      // e.g. https://xxxx.supabase.co
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6b2p5ZGdwYnppZXZiZWVweGFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4Njk4NjMsImV4cCI6MjEwMTQ0NTg2M30.Fwc-1ROojpg0nOMLHcg0hgBe0_noZGWpnCuRt-ehHLo"; // anon public key — table must be INSERT-only via RLS
+const VARIANT = new URLSearchParams(location.search).get('v') || 'ghost';
+const TESTER = 'GH-' + Math.random().toString(36).slice(2,6).toUpperCase();
+
+/* ============ analytics ============ */
+const A = {
+  lesson: "ghost-01-counter", version: "1.0",
+  variant: VARIANT, tester: TESTER,
+  startedAt: null, completedAt: null, confidencePre: null,
+  steps: []
+};
+let stepRec = null;
+function beginStep(id){ stepRec = { id, t0: Date.now(), events: [] }; A.steps.push(stepRec); }
+function logEv(type, data){ if(stepRec) stepRec.events.push(Object.assign({type, at: Date.now()-stepRec.t0}, data||{})); }
+function endStep(){ if(stepRec){ stepRec.ms = Date.now()-stepRec.t0; stepRec = null; } }
+
+/* ============ code model ============ */
+const HTML_CODE = `<h1>My Counter</h1>
+<p id="count-display">0</p>
+<button id="plus-button">+1</button>`;
+
+const JS = {
+  varOnly: `let count = 0;`,
+  messenger: `let count = 0;
+
+let display = document.getElementById("count-display");
+
+function updateDisplay() {
+  display.textContent = count;
+}`,
+  brokenAdd: `let count = 0;
+
+let display = document.getElementById("count-display");
+
+function updateDisplay() {
+  display.textContent = count;
+}
+
+function addToCount() {
+  count = count + 1;
+}`,
+  fixedAdd: `let count = 0;
+
+let display = document.getElementById("count-display");
+
+function updateDisplay() {
+  display.textContent = count;
+}
+
+function addToCount() {
+  count = count + 1;
+  updateDisplay();
+}`,
+  withBoot: `let count = 0;
+
+let display = document.getElementById("count-display");
+
+function updateDisplay() {
+  display.textContent = count;
+}
+
+function addToCount() {
+  count = count + 1;
+  updateDisplay();
+}
+
+updateDisplay();`,
+  transferStarter: `let count = 0;
+
+let display = document.getElementById("count-display");
+
+function updateDisplay() {
+  display.textContent = count;
+}
+
+function addToCount() {
+  count = count + 1;
+  updateDisplay();
+}
+
+function subtractFromCount() {
+  // your two lines here
+}
+
+updateDisplay();`
+};
+const LOCK_LINE = `/* 🔒 button wiring — Lesson 2 (handled for you) */`;
+
+/* ============ syntax highlight (light touch) ============ */
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function hlJS(line){
+  let s = esc(line);
+  if(/^\s*\/\//.test(line) || /^\s*\/\*/.test(line)) return '<span class="tok-c">'+s+'</span>';
+  s = s.replace(/(&quot;|")([^"]*)(&quot;|")/g, (m)=>'<span class="tok-s">'+m+'</span>');
+  s = s.replace(/\b(let|const|function|return|if|else)\b/g,'<span class="tok-k">$1</span>');
+  s = s.replace(/\b(\d+)\b/g,'<span class="tok-n">$1</span>');
+  s = s.replace(/\b(updateDisplay|addToCount|subtractFromCount|getElementById)\b/g,'<span class="tok-f">$1</span>');
+  return s;
+}
+function hlHTML(line){
+  let s = esc(line);
+  s = s.replace(/([a-z-]+)=(&quot;|")([^"]*?)(&quot;|")/g,'<span class="tok-f">$1</span>=<span class="tok-s">"$3"</span>');
+  s = s.replace(/(&lt;\/?)([a-z0-9]+)/g,'$1<span class="tok-k">$2</span>');
+  return s;
+}
+
+/* render code into a pane as .ln lines; flags = {lineIndex: 'new'|'warn'|'good'|'lock'} */
+function renderCode(el, code, mode, flags){
+  flags = flags || {};
+  const hl = mode==='html'? hlHTML : hlJS;
+  el.innerHTML = code.split("\n").map((ln,i)=>{
+    const f = flags[i] ? ' f-'+flags[i] : '';
+    return '<span class="ln'+f+'">'+(hl(ln)||'&nbsp;')+'</span>';
+  }).join("");
+}
+
+/* ghost-types code into a pane, char by char */
+async function ghostType(paneSel, codeSel, fullCode, mode, flags){
+  const pane = $(paneSel), codeEl = $(codeSel);
+  pane.classList.add('active');
+  cursorTo(pane.querySelector('.pane-head'));
+  if(REDUCED){ renderCode(codeEl, fullCode, mode, flags); pane.classList.remove('active'); return; }
+  let cur = "";
+  const cps = 32; // chars per second-ish
+  for(const ch of fullCode){
+    cur += ch;
+    codeEl.textContent = cur + "▍";
+    if(ch === "\n") await sleep(140); else await sleep(1000/cps/1.4);
+  }
+  renderCode(codeEl, fullCode, mode, flags);
+  pane.classList.remove('active');
+}
+
+/* types only the appended tail (existing stays highlighted) */
+async function ghostAppend(paneSel, codeSel, baseCode, fullCode, mode, flags){
+  const pane = $(paneSel), codeEl = $(codeSel);
+  pane.classList.add('active');
+  cursorTo(pane.querySelector('.pane-head'));
+  if(REDUCED){ renderCode(codeEl, fullCode, mode, flags); pane.classList.remove('active'); return; }
+  const tail = fullCode.slice(baseCode.length);
+  let cur = baseCode;
+  for(const ch of tail){
+    cur += ch;
+    codeEl.textContent = cur + "▍";
+    if(ch === "\n") await sleep(120); else await sleep(22);
+  }
+  renderCode(codeEl, fullCode, mode, flags);
+  pane.classList.remove('active');
+}
+
+/* ============ ghost cursor ============ */
+const gc = $('#ghostcur');
+function cursorTo(el){
+  if(!el) return;
+  const r = el.getBoundingClientRect();
+  gc.classList.add('show');
+  gc.style.transform = `translate(${r.left + r.width/2}px, ${r.top + r.height/2}px)`;
+}
+async function ghostClick(el){
+  cursorTo(el);
+  await sleep(REDUCED? 60 : 1150);
+  el.classList.add('press');
+  await sleep(140);
+  el.classList.remove('press');
+  el.dispatchEvent(new Event('ghost-press'));
+  await sleep(REDUCED? 100 : 420);
+}
+function cursorHide(){ gc.classList.remove('show'); }
+
+/* ============ preview (the running app) ============ */
+const preview = $('#preview');
+let api = null; // learner/ghost code exports
+function buildPreview(withMinus){
+  preview.innerHTML =
+    '<h1>My Counter</h1>' +
+    '<p data-pid="count-display">0</p>' +
+    '<button data-pid="plus-button">+1</button>' +
+    (withMinus ? '<button data-pid="minus-button">−1</button>' : '');
+  const plus = preview.querySelector('[data-pid="plus-button"]');
+  plus.addEventListener('click', ()=> userPress(plus,'add'));
+  plus.addEventListener('ghost-press', ()=> { if(api && api.addToCount) safeCall(api.addToCount); });
+  if(withMinus){
+    const minus = preview.querySelector('[data-pid="minus-button"]');
+    minus.addEventListener('click', ()=> userPress(minus,'sub'));
+  }
+}
+function userPress(btn, which){
+  btn.classList.add('press'); setTimeout(()=>btn.classList.remove('press'),120);
+  logEv('preview-click',{which});
+  if(!api) return;
+  if(which==='add' && api.addToCount) safeCall(api.addToCount);
+  if(which==='sub'){
+    if(api.subtractFromCount) safeCall(api.subtractFromCount);
+    else consoleMsg('err','subtractFromCount is still empty — the button has nowhere to send the click.');
+  }
+}
+function safeCall(fn){
+  try{ fn(); consoleClear(); }
+  catch(e){ consoleMsg('err','Error: '+e.message); }
+}
+const strip = $('#console-strip');
+function consoleMsg(kind,msg){ strip.className='console-strip on '+kind; strip.textContent=msg; }
+function consoleClear(){ strip.className='console-strip'; strip.textContent=''; }
+function displayText(){ const d = preview.querySelector('[data-pid="count-display"]'); return d? d.textContent : null; }
+
+/* ============ executor: run (ghost or learner) JS against the preview ============ */
+function execute(jsCode){
+  buildPreview(preview.querySelector('[data-pid="minus-button"]') !== null);
+  const fakeDoc = { getElementById: id => preview.querySelector('[data-pid="'+CSS.escape(id)+'"]') };
+  const harness = `
+;return {
+  addToCount: (typeof addToCount!=="undefined")? addToCount : null,
+  subtractFromCount: (typeof subtractFromCount!=="undefined")? subtractFromCount : null,
+  updateDisplay: (typeof updateDisplay!=="undefined")? updateDisplay : null,
+  __count: () => { try { return count } catch(e){ return undefined } }
+};`;
+  try{
+    const fn = new Function('document', '"use strict";\n' + jsCode + harness);
+    api = fn(fakeDoc);
+    consoleClear();
+    return { ok:true };
+  }catch(e){
+    api = null;
+    consoleMsg('err','Error: '+e.message);
+    return { ok:false, error:e.message };
+  }
+}
+
+/* ============ right-column widgets ============ */
+function eyebrow(txt){ $('#eyebrow').innerHTML = txt; }
+async function narrate(text){
+  const n = $('#narr');
+  n.style.opacity = 0;
+  await sleep(REDUCED?0:180);
+  n.textContent = text;
+  n.style.transition = 'opacity .5s'; n.style.opacity = 1;
+}
+function clearCues(){ $('#cues').innerHTML=''; }
+function cue(kind, tag, text){
+  const div = document.createElement('div');
+  div.className = 'cue cue-'+kind;
+  div.innerHTML = '<span class="tag">'+tag+'</span> '+text;
+  $('#cues').appendChild(div);
+  return div;
+}
+function clearInteract(){ $('#interact').innerHTML=''; }
+function interactNode(html){
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  $('#interact').appendChild(d.firstElementChild || d);
+  return $('#interact').lastElementChild;
+}
+function awaitButton(label, cls){
+  return new Promise(res=>{
+    const b = interactNode('<button class="btn '+(cls||'')+'">'+label+'</button>');
+    b.addEventListener('click', ()=>{ b.remove(); res(); });
+  });
+}
+function holdButton(label, seconds){
+  return new Promise(res=>{
+    const b = interactNode('<button class="btn" disabled>'+label+' ('+seconds+')</button>');
+    let s = seconds;
+    const iv = setInterval(()=>{
+      s--;
+      if(s<=0){ clearInterval(iv); b.disabled=false; b.textContent=label; }
+      else b.textContent = label+' ('+s+')';
+    },1000);
+    b.addEventListener('click', ()=>{ if(!b.disabled){ b.remove(); res(); } });
+  });
+}
+
+/* prediction pause: opts=[{t,correct,fb}], generalRight/generalWrong fallback feedback */
+function prediction(id, question, opts){
+  return new Promise(res=>{
+    const card = interactNode(
+      '<div class="task"><h3>⏸ Predict</h3><p>'+question+'</p><div class="opts"></div></div>');
+    const wrap = card.querySelector('.opts');
+    opts.forEach((o,i)=>{
+      const b = document.createElement('button');
+      b.textContent = String.fromCharCode(65+i)+') '+o.t;
+      b.addEventListener('click', ()=>{
+        [...wrap.children].forEach(x=>x.disabled=true);
+        b.classList.add(o.correct? 'picked-right':'picked-wrong');
+        logEv('prediction',{id, choice:i, correct:!!o.correct, stem:question, picked:o.t});
+        res({correct:!!o.correct, fb:o.fb, choice:i});
+        card.dataset.done = "1";
+      });
+      wrap.appendChild(b);
+    });
+  });
+}
+
+/* ============ editor mode ============ */
+let editor = null;
+function openEditor(code){
+  const jsCode = $('#js-code');
+  jsCode.innerHTML = '';
+  editor = document.createElement('textarea');
+  editor.className = 'code';
+  editor.spellcheck = false;
+  editor.value = code + "\n\n" + LOCK_LINE;
+  jsCode.appendChild(editor);
+  $('#js-pane').classList.add('active');
+}
+function closeEditor(){
+  if(!editor) return "";
+  const v = editor.value;
+  $('#js-pane').classList.remove('active');
+  return v;
+}
+function editorCode(){ return editor ? editor.value.replace(LOCK_LINE,"") : ""; }
+
+/* task card with Run + Reset; check(codeStr) -> {pass, msg, kind} */
+function editTask(id, title, body, starterCode, check, opts){
+  opts = opts || {};
+  openEditor(starterCode);
+  return new Promise(res=>{
+    const card = interactNode(
+      '<div class="task"><h3>'+title+'</h3><p>'+body+'</p>'+
+      '<div class="row"><button class="btn btn-solid" data-run>Run my code</button>'+
+      '<button class="btn btn-quiet" data-reset>Reset code</button></div>'+
+      '<div data-fb></div>'+
+      (opts.hints? '<div class="row" data-hints style="margin-top:10px"></div>':'')+
+      '</div>');
+    const fb = card.querySelector('[data-fb]');
+    let attempts = 0, hintsUsed = 0;
+
+    if(opts.hints){
+      const hz = card.querySelector('[data-hints]');
+      const hb = document.createElement('button');
+      hb.className = 'btn btn-quiet';
+      let level = 0, locked = false;
+      const labels = ['Show hint 1','Show hint 2','Show me the lines'];
+      hb.textContent = labels[0];
+      hb.addEventListener('click', ()=>{
+        if(locked || level>=opts.hints.length) return;
+        hintsUsed++; logEv('hint',{id, level:level+1});
+        fb.innerHTML = '';
+        cueInto(fb,'why','◆ HINT '+(level+1), opts.hints[level]);
+        level++;
+        if(level>=opts.hints.length){ hb.remove(); return; }
+        locked = true; let s = 20; hb.disabled = true;
+        hb.textContent = labels[level]+' ('+s+')';
+        const iv = setInterval(()=>{ s--; if(s<=0){clearInterval(iv);locked=false;hb.disabled=false;hb.textContent=labels[level];} else hb.textContent=labels[level]+' ('+s+')'; },1000);
+      });
+      hz.appendChild(hb);
+    }
+
+    card.querySelector('[data-reset]').addEventListener('click', ()=>{
+      editor.value = starterCode + "\n\n" + LOCK_LINE;
+      logEv('reset',{id});
+    });
+
+    card.querySelector('[data-run]').addEventListener('click', ()=>{
+      attempts++;
+      const code = editorCode();
+      const r = execute(code);
+      let result;
+      if(!r.ok){ result = {pass:false, msg:'The code has a syntax problem — the app couldn\'t start. Check the error strip under the preview, fix, and run again.', kind:'warn'}; }
+      else result = check(code);
+      fb.innerHTML='';
+      logEv('run',{id, attempt:attempts, pass:!!result.pass});
+      if(result.pass){
+        cueInto(fb,'good','✓ PASSED', result.msg);
+        [...card.querySelectorAll('button')].forEach(b=>b.disabled=true);
+        res({attempts, hintsUsed});
+      } else {
+        cueInto(fb, result.kind||'warn','▲ NOT YET', result.msg);
+      }
+    });
+  });
+}
+function cueInto(container, kind, tag, text){
+  const div = document.createElement('div');
+  div.className = 'cue cue-'+kind;
+  div.style.marginTop = '10px';
+  div.innerHTML = '<span class="tag">'+tag+'</span> '+text;
+  container.appendChild(div);
+}
+
+/* click +1 in preview n times programmatically (as the ghost) */
+async function ghostClicksPlus(n){
+  const plus = preview.querySelector('[data-pid="plus-button"]');
+  for(let i=0;i<n;i++) await ghostClick(plus);
+  cursorHide();
+}
+
+/* ============ progress rail ============ */
+const STAGE_NAMES = ["Orient","Build","Build","Messenger","Break","Fix","Edit 1","Edit 2","Transfer","Reflect"];
+function buildRail(){
+  $('#rail').innerHTML = STAGE_NAMES.map((n,i)=>'<div class="seg" data-i="'+i+'"><span>'+n+'</span></div>').join('');
+}
+function setStage(i){
+  [...$('#rail').children].forEach((seg,j)=>{
+    seg.className = 'seg' + (j<i? ' done' : j===i? ' now' : '');
+  });
+}
+
+/* ============ THE LESSON ============ */
+async function runLesson(){
+  buildRail();
+  buildPreview(false);
+
+  /* ---------- S0 ORIENTATION ---------- */
+  setStage(0); beginStep('S0-orientation');
+  eyebrow('Stage · <b>Orientation</b>');
+  renderCode($('#html-code'), HTML_CODE, 'html');
+  execute(JS.withBoot); // finished app running for the demo
+  renderCode($('#js-code'), '// the ghost hasn\'t started typing yet…', 'js');
+  await narrate("This is the whole app. A number, a button, and one honest idea: where does that number actually live? By the end you'll change this app yourself, and I'll break it on purpose so you can see the idea that beginners miss for weeks. Watch first. You'll take over soon.");
+  cue('why','◆ WHY','Small app. Big idea. The idea is the point.');
+  await sleep(600);
+  await ghostClicksPlus(3);
+  await awaitButton("I'm ready");
+  endStep();
+
+  /* ---------- S1 SKELETON ---------- */
+  setStage(1); beginStep('S1-skeleton');
+  eyebrow('Stage · <b>Guided build</b>');
+  clearCues(); clearInteract(); consoleClear();
+  api = null; buildPreview(false); // reset app: button is furniture again
+  renderCode($('#js-code'), '', 'js');
+  await narrate("Three pieces. A title. A paragraph that shows a zero — notice it has a name tag, count-display. We'll need to find it later, and you find things by name. And a button. Right now the button is furniture. It does nothing. That's fine.");
+  await ghostType('#html-pane','#html-code', HTML_CODE, 'html', {1:'new'});
+  cue('new','● NEW','An <code>id</code> is a name tag. JavaScript finds elements by name.');
+  cue('warn','▲ WATCH OUT','That zero is just text typed into the page. Remember it. It matters in about four minutes.');
+  await sleep(400);
+  await awaitButton('Keep going');
+  endStep();
+
+  /* ---------- S2 VARIABLE + P1 ---------- */
+  setStage(2); beginStep('S2-variable');
+  eyebrow('Stage · <b>Guided build · Predict</b>');
+  clearCues(); clearInteract();
+  await narrate("One line. This creates the app's memory — a box named count, holding zero. This box is the app's private truth about the number.");
+  await ghostType('#js-pane','#js-code', JS.varOnly, 'js', {0:'new'});
+  cue('new','● NEW','A variable = a named box the app remembers.');
+  const p1 = await prediction('P1',
+    'Right now, the zero the USER sees on the page — where does it live?',
+    [
+      {t:'In the count variable', fb:''},
+      {t:"In the paragraph's text on the page", correct:true},
+      {t:"Both — they're linked automatically", fb:'C'},
+      {t:'In the button'}
+    ]);
+  if(p1.correct){
+    cue('good','✓ CORRECT',"Yes. Two different zeros. The page shows the text zero from the HTML. The variable's zero is invisible. Nobody has connected them — yet.");
+  } else {
+    cue('warn','▲ THE TRAP',"Reasonable guess — and it's the single most common beginner assumption. Nothing is linked automatically. There are two separate zeros right now: one in memory, one on screen. Connecting them is our actual job.");
+  }
+  await awaitButton('Keep going');
+  endStep();
+
+  /* ---------- S3 MESSENGER ---------- */
+  setStage(3); beginStep('S3-messenger');
+  eyebrow('Stage · <b>Guided build</b>');
+  clearCues(); clearInteract();
+  await narrate("Two moves. First: go find the paragraph by its name tag and keep a handle on it — read the long line right to left: get the element whose id is count-display, call it display. Second: a function — a saved recipe. This recipe has one job: copy whatever is in the memory box onto the screen. It is the messenger between the two homes. And the part that matters: the messenger only runs when someone tells it to run. Nothing here is automatic.");
+  await ghostAppend('#js-pane','#js-code', JS.varOnly, JS.messenger, 'js', {2:'new',4:'new',5:'warn'});
+  cue('new','● NEW','Find by name tag. Read it right to left.');
+  cue('new','● NEW','A function = a saved recipe. Defining it does not run it.');
+  cue('warn','▲ WATCH OUT','The screen does not watch the variable. Ever. Updates must be pushed.');
+  const pm = await prediction('P-S3','Quick check — the messenger recipe, updateDisplay: when does it run?',
+    [
+      {t:'Automatically, whenever count changes'},
+      {t:'Only when something calls it', correct:true},
+      {t:'Once per second, in the background'}
+    ]);
+  if(pm.correct) cue('good','✓ CORRECT','Nothing here is automatic. Hold that thought — it\'s about to matter.');
+  else cue('warn','▲ HOLD THIS','Nothing in this file runs itself. The messenger sits still until something calls it. Watch what that means…');
+  await awaitButton('Keep building');
+  endStep();
+
+  /* ---------- S4 BREAK IT + P2 ---------- */
+  setStage(4); beginStep('S4-break');
+  eyebrow('Stage · <b>Guided build · Predict · Break</b>');
+  clearCues(); clearInteract();
+  await narrate("New recipe: addToCount. Take what's in the box, add one, put it back. And the greyed-out line? That's the wire from the button to the recipe. How that wire works is Lesson 2 — today it's a locked box that just works. So: button click runs addToCount. The memory goes up by one. Question before I click…");
+  const brokenWithLock = JS.brokenAdd + "\n\n" + LOCK_LINE;
+  const lockIdx = brokenWithLock.split("\n").length - 1;
+  const flags = {8:'new'}; flags[lockIdx] = 'lock';
+  await ghostAppend('#js-pane','#js-code', JS.messenger, brokenWithLock, 'js', flags);
+  cue('lock','🔒 LOCKED','Black box until Lesson 2. It connects the button to the recipe.');
+  execute(JS.brokenAdd); // wire the broken version for real
+  const p2 = await prediction('P2',
+    "The ghost is about to click [+1] once. What does the SCREEN show after the click?",
+    [
+      {t:'1'},
+      {t:'0', correct:true},
+      {t:'An error message'},
+      {t:'Nothing — the page goes blank'}
+    ]);
+  await ghostClicksPlus(1);
+  consoleMsg('brk','🔴 BROKEN — Memory says 1. Screen says 0.');
+  cue('broken','✕ BROKEN','Memory: 1 · Screen: 0. The app is lying to its user right now.');
+  if(p2.correct){
+    cue('good','✓ CORRECT','You already have the model. The variable moved. The screen wasn\'t told.');
+  } else {
+    cue('warn','▲ THE TRAP','This is THE trap — nearly everyone falls in, which is why the ghost set it. The memory box really does hold 1 now. But changing memory never changes the screen. Two homes. No messenger sent. Not a trick: every line was on screen. The skill being built here is reading what the code <em>does</em> — not what it should do.');
+  }
+  await holdButton('Let that sink in — continue', 4);
+  endStep();
+
+  /* ---------- S5 FIX + P3 ---------- */
+  setStage(5); beginStep('S5-fix');
+  eyebrow('Stage · <b>Predict · Fix</b>');
+  clearCues(); clearInteract();
+  await narrate("So the app is broken in the most honest way possible. The memory is right. The screen is stale. What's the fix?");
+  const p3 = await prediction('P3','What repairs it?',
+    [
+      {t:'Restart the page after every click'},
+      {t:'Change the HTML zero to a one'},
+      {t:'Run updateDisplay() right after changing count', correct:true},
+      {t:'Nothing — wait a moment and the screen catches up'}
+    ]);
+  const fixedWithLock = JS.fixedAdd + "\n\n" + LOCK_LINE;
+  const fFlags = {}; fFlags[10] = 'good'; fFlags[fixedWithLock.split("\n").length-1] = 'lock';
+  await narrate("One line. Change the memory, then send the messenger.");
+  renderCode($('#js-code'), fixedWithLock, 'js', fFlags);
+  $('#js-pane').classList.add('active'); await sleep(REDUCED?0:700); $('#js-pane').classList.remove('active');
+  execute(JS.fixedAdd);
+  await ghostClicksPlus(3);
+  if(p3.correct) cue('good','✓ CORRECT','Change state, then push state.');
+  cue('why','◆ WHY','Change state → push state. That two-step is not a counter trick — it is most of what every app you\'ve ever used is doing under the hood.');
+  await narrate("Click — one. Click — two. Click — three. That two-step — change state, push state — is the pattern you'll see for the rest of your life.");
+  await awaitButton('My turn');
+  endStep();
+
+  /* ---------- S6 MICRO-EDIT E1 ---------- */
+  setStage(6); beginStep('S6-edit-start');
+  eyebrow('Stage · <b>Micro-edit — you drive</b>');
+  clearCues(); clearInteract();
+  await narrate("One last ghost line first: updateDisplay(), run once at the bottom, so the screen starts honest when the app loads. Now the code unlocks. It's yours.");
+  const bootWithLock = JS.withBoot + "\n\n" + LOCK_LINE;
+  const bFlags = {}; bFlags[13] = 'good'; bFlags[bootWithLock.split("\n").length-1] = 'lock';
+  renderCode($('#js-code'), bootWithLock, 'js', bFlags);
+  $('#js-pane').classList.add('active'); await sleep(REDUCED?0:700); $('#js-pane').classList.remove('active');
+  execute(JS.withBoot);
+  cursorHide();
+  const e1 = await editTask('E1','Your first edit','Make the counter START at 10. Edit one number, then press Run.',
+    JS.withBoot,
+    (code)=>{
+      const startsAt10 = /let\s+count\s*=\s*10\b/.test(code);
+      const shows10 = displayText() === '10';
+      if(startsAt10 && shows10) return {pass:true, msg:'You just changed application state before ever clicking anything — and the boot-up messenger pushed it to the screen.'};
+      if(!startsAt10) return {pass:false, msg:'Memory still starts at 0 — the variable line <code>let count = 0;</code> is the one to change. Memory is the truth; the screen is the copy.'};
+      return {pass:false, msg:'The variable says 10, but the screen didn\'t hear about it on load. Is the bottom <code>updateDisplay();</code> line still there? That\'s the boot-up messenger.'};
+    });
+  logEv('task-done',{id:'E1', attempts:e1.attempts});
+  await awaitButton('Next task');
+  endStep();
+
+  /* ---------- S7 MICRO-EDIT E2 + P4 ---------- */
+  setStage(7); beginStep('S7-edit-step');
+  eyebrow('Stage · <b>Micro-edit · Predict</b>');
+  clearCues(); clearInteract();
+  await narrate("Next: make each click add 5 instead of 1. But before you run it — predict.");
+  const p4 = await prediction('P4','Once your change is in and each click adds 5 — starting at 10, TWO clicks of the [+1] button later, the screen shows:',
+    [
+      {t:'15'},
+      {t:'20', correct:true},
+      {t:'12'},
+      {t:'50'}
+    ]);
+  if(!p4.correct) cue('warn','▲ CHECK','Each click runs the recipe once: +5, then +5 again.');
+  const e2 = await editTask('E2','Change the step size','Make each click add 5 instead of 1. Then Run, and click [+1] twice in the preview to verify your prediction.',
+    editorCode().trim() || JS.withBoot.replace('let count = 0','let count = 10'),
+    (code)=>{
+      const has5 = /count\s*(\+=\s*5|=\s*count\s*\+\s*5)\b/.test(code);
+      if(!has5) return {pass:false, msg:'The recipe still adds 1. Find the line inside <code>addToCount</code> that changes the memory.'};
+      // behavior: simulate two clicks
+      if(api && api.addToCount){ safeCall(api.addToCount); safeCall(api.addToCount); }
+      const shown = displayText();
+      const start10 = /let\s+count\s*=\s*10\b/.test(code);
+      const expect = start10 ? '20' : String((parseInt((code.match(/let\s+count\s*=\s*(\d+)/)||[0,0])[1],10) + 10));
+      if(shown === expect) return {pass:true, msg:'Predicted, edited, verified. That loop — guess, change, check — is what "knowing how to code" actually feels like from inside.'};
+      return {pass:false, msg:'The math changed but the screen disagrees after two clicks — check that <code>updateDisplay()</code> still runs inside the recipe.'};
+    });
+  logEv('task-done',{id:'E2', attempts:e2.attempts});
+  await awaitButton('Final challenge');
+  endStep();
+
+  /* ---------- S8 TRANSFER ---------- */
+  setStage(8); beginStep('S8-transfer');
+  eyebrow('Stage · <b>Transfer — reduced help</b>');
+  clearCues(); clearInteract();
+  buildPreview(true); api = null;
+  await narrate("Fresh start, plus a second button: minus one. Its wire is already connected to an empty recipe. No hints on the card. Everything you need, you watched get built.");
+  const t = await editTask('T1','Make [−1] work','Fill in <code>subtractFromCount</code> so the minus button lowers the number. Run, then click both buttons in the preview to prove it.',
+    JS.transferStarter,
+    (code)=>{
+      if(!api || !api.subtractFromCount) return {pass:false, msg:'The recipe <code>subtractFromCount</code> is still empty — the button has nowhere to send the click.'};
+      // behavior: from load(0), +1 → 1, −1 → 0
+      if(api.addToCount) safeCall(api.addToCount);
+      const afterPlus = displayText();
+      safeCall(api.subtractFromCount);
+      const afterMinus = displayText();
+      if(afterPlus === '1' && afterMinus === '0') return {pass:true, msg:'That recipe did not exist until you wrote it. The app does something new because you changed its state logic. That\'s the whole job.'};
+      if(afterPlus === '1' && afterMinus === '1') return {pass:false, msg:'Memory went down — but the screen never heard about it. Two lines: change the memory, then send the messenger.'};
+      return {pass:false, msg:'Close — the number moves, but not by exactly one each way. Mirror <code>addToCount</code> and flip the math.'};
+    },
+    { hints: [
+      'Two lines: change the memory, then send the messenger.',
+      'Mirror <code>addToCount</code>, flip the math: <code>count = count - 1;</code> then…',
+      'The two lines are:<br><code>count = count - 1;</code><br><code>updateDisplay();</code><br>Type them yourself inside the recipe — retyping is part of it.'
+    ]});
+  logEv('task-done',{id:'T1', attempts:t.attempts, hints:t.hintsUsed});
+  cue('why','◆ LESSON 3 PREVIEW','Could you stop it going below zero? Don\'t worry if not — that tool arrives in Lesson 3.');
+  await awaitButton('Finish the lesson');
+  endStep();
+
+  /* ---------- S9 REFLECTION ---------- */
+  setStage(9); beginStep('S9-reflection');
+  eyebrow('Stage · <b>Reflect — on paper</b>');
+  clearCues(); clearInteract(); closeEditor(); consoleClear();
+  await narrate("Last step, and it's on paper, not the keyboard. Grab anything — a notebook, the back of an envelope. In your own shorthand, your own words: the number lives in two places — what are they, and what has to happen for the one on the screen to change? Compress it however your brain likes. That written line is worth more than everything you just watched.");
+  interactNode('<div class="task"><h3>📝 On paper</h3><p>Two homes. Which two? What moves the second one?</p></div>');
+  await awaitButton('Done — finish lesson','btn-solid');
+  endStep();
+
+  finish();
+}
+
+/* ============ exit ============ */
+function finish(){
+  A.completedAt = new Date().toISOString();
+  $('#lesson').classList.add('hidden');
+  cursorHide();
+  const preds = A.steps.flatMap(s=>s.events.filter(e=>e.type==='prediction'));
+  const TRAP_IDS = ['P2']; // the designed break — its job is to catch you; not a comprehension score
+  const checks = preds.filter(p=>TRAP_IDS.indexOf(p.id)===-1);
+  const traps = preds.filter(p=>TRAP_IDS.indexOf(p.id)!==-1);
+  const right = checks.filter(p=>p.correct).length;
+  const trapLine = traps.length
+    ? (traps.every(t=>t.correct)
+        ? 'the trap &nbsp;·&nbsp; you saw it coming — rare'
+        : 'the trap &nbsp;·&nbsp; caught you, like it catches almost everyone. That moment <b>is</b> the lesson')
+    : '';
+  const tasks = A.steps.flatMap(s=>s.events.filter(e=>e.type==='task-done'));
+  const totalMin = Math.round((Date.now() - A.t0)/60000 * 10)/10;
+  $('#summary').innerHTML =
+    'tester code &nbsp;·&nbsp; <b style="color:var(--ghost)">'+TESTER+'</b> &nbsp;·&nbsp; keep this for the 48-hour follow-up<br>'+
+    'comprehension checks first-try &nbsp;·&nbsp; '+right+' / '+checks.length+'<br>'+
+    (trapLine ? trapLine+'<br>' : '')+
+    tasks.map(t=>t.id+' attempts &nbsp;·&nbsp; '+t.attempts+(t.hints?(' &nbsp;·&nbsp; hints '+t.hints):'' )).join('<br>')+'<br>'+
+    'total time &nbsp;·&nbsp; '+totalMin+' min &nbsp;·&nbsp; confidence-in &nbsp;·&nbsp; '+A.confidencePre+'/5';
+  sendResults();
+  $('#exit-screen').classList.remove('hidden');
+  $('#copy-results').addEventListener('click', async ()=>{
+    const data = JSON.stringify(A);
+    try{ await navigator.clipboard.writeText(data); $('#copy-results').textContent='Copied ✓'; }
+    catch(e){
+      const ta = document.createElement('textarea'); ta.value=data; ta.className='code';
+      $('#exit-screen').appendChild(ta); ta.select();
+    }
+  });
+}
+
+async function sendResults(){
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return; // offline mode: copy button only
+  try{
+    await fetch(SUPABASE_URL + '/rest/v1/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ tester_code: TESTER, variant: VARIANT, payload: A })
+    });
+  }catch(e){ /* silent — the copy button is the fallback */ }
+}
+
+/* ============ boot ============ */
+(function(){
+  let conf = null;
+  $('#conf-scale').addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    conf = +b.dataset.v;
+    [...$('#conf-scale').children].forEach(x=>x.classList.toggle('on', x===b));
+    $('#begin-btn').disabled = false;
+  });
+  $('#begin-btn').addEventListener('click', ()=>{
+    A.confidencePre = conf;
+    A.startedAt = new Date().toISOString();
+    A.t0 = Date.now();
+    $('#start-screen').classList.add('hidden');
+    $('#lesson').classList.remove('hidden');
+    runLesson().catch(err=>{
+      console.error(err);
+      consoleMsg('err','Player error: '+err.message+' — refresh to restart the lesson.');
+    });
+  });
+})();
+</script>
+</body>
+</html>
